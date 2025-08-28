@@ -1,0 +1,34 @@
+/* Signup Page */
+body {
+    background-color: #e8f5e9;
+    font-family: 'Segoe UI', sans-serif;
+}
+
+.card {
+    border-radius: 15px;
+    padding: 30px;
+    box-shadow: 0 6px 15px rgba(0,0,0,0.1);
+}
+
+.card h3 {
+    text-align: center;
+    color: #198754;
+    margin-bottom: 20px;
+}
+
+/* Inputs */
+.form-control {
+    border-radius: 10px;
+    padding: 10px 12px;
+}
+
+.form-control:focus {
+    border-color: #198754;
+    box-shadow: 0 0 8px rgba(25, 135, 84, 0.2);
+}
+
+/* Button */
+.btn-success {
+    border-radius: 10px;
+    font-weight: bold;
+}
