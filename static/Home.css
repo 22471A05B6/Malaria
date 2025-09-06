@@ -1,0 +1,98 @@
+/* Hero Section */
+.hero {
+    position: relative;
+    background: radial-gradient(1200px 400px at -10% -20%, rgba(255,255,255,0.12), transparent 60%),
+                radial-gradient(1000px 400px at 110% 120%, rgba(255,255,255,0.1), transparent 60%),
+                linear-gradient(100deg, #0d6efd 0%, #6c63ff 60%, #8e7dff 100%);
+    border-radius: 15px;
+    box-shadow: 0 20px 40px rgba(13, 110, 253, 0.2);
+}
+
+.hero::before,
+.hero::after {
+    content: "";
+    position: absolute;
+    width: 220px;
+    height: 220px;
+    border-radius: 50%;
+    filter: blur(40px);
+    opacity: 0.35;
+    z-index: 0;
+}
+
+.hero::before {
+    background: #ffc107;
+    top: -40px;
+    left: -40px;
+}
+
+.hero::after {
+    background: #20c997;
+    bottom: -40px;
+    right: -40px;
+}
+
+.hero .container,
+.hero .row,
+.hero [class^="col-"] {
+    position: relative;
+    z-index: 1;
+}
+
+.hero h1 {
+    font-size: 3rem;
+}
+
+.hero p {
+    font-size: 1.2rem;
+}
+
+/* Feature Cards */
+.card {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 1rem 2rem rgba(0,0,0,0.15);
+}
+
+.card img {
+    margin-top: 15px;
+}
+
+/* Larger feature icons */
+.card .card-img-top {
+    width: 96px !important;
+    height: auto;
+}
+
+@media (max-width: 575.98px) {
+    .card .card-img-top { width: 80px !important; }
+}
+
+.card h5 {
+    font-weight: bold;
+    margin-top: 10px;
+}
+
+.card p {
+    font-size: 0.9rem;
+    color: #555;
+}
+
+/* Accordion polish */
+.accordion-button:not(.collapsed) {
+    color: #0d6efd;
+    background-color: rgba(13,110,253,0.08);
+}
+
+.accordion-button:focus {
+    box-shadow: 0 0 0 0.2rem rgba(13,110,253,0.25);
+}
+
+/* Responsive typography */
+@media (max-width: 767.98px) {
+    .hero h1 { font-size: 2.25rem; }
+    .hero p { font-size: 1rem; }
+}
