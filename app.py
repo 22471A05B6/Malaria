@@ -1,14 +1,18 @@
+# ==============================
+# app.py - Robust Malaria Detection (with Image Quality Filter)
+# ==============================
+
 from flask import Flask, render_template, request, flash, redirect, url_for
 import tensorflow as tf
 from tensorflow.keras.preprocessing import image
-from tensorflow.keras.applications import DenseNet121
+from tensorflow.keras.applications import DenseNet121, MobileNetV2
 from tensorflow.keras.layers import GlobalAveragePooling2D
 from tensorflow.keras.models import Model
 from werkzeug.utils import secure_filename
 import numpy as np
 import cv2
 import os
-from scipy.stats import entropy   # for uncertainty check
+from scipy.stats import entropy
 
 # ==============================
 # CONFIG
@@ -23,29 +27,37 @@ app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 IMG_SIZE = (128, 128)
 users = {}  # Mock DB
 
-CONF_THRESHOLD = 0.7
-UNCERTAINTY_THRESHOLD = 0.4
+# Thresholds
+CONF_THRESHOLD = 0.6
+UNCERTAINTY_THRESHOLD = 0.8
+BLUR_THRESHOLD = 50.0  # Laplacian variance for blurriness detection
 
-
-
-# ====== Load Trained Model ======
-MODEL_PATH = "DenseNet121_LSTM_GRU_final.h5"
-try:
-    model = tf.keras.models.load_model(MODEL_PATH)
-    print("✅ Model loaded successfully!")
-except Exception as e:
-    model = None
-    print(f"⚠️ Could not load model: {e}")
-
-# ====== Class Names ======
 CLASS_NAMES = ["Parasitized", "Uninfected"]
 
-# ====== DenseNet121 Feature Extractor ======
-base_model = DenseNet121(weights="imagenet", include_top=False, input_shape=(128, 128, 3))
-base_model.trainable = False
-out = GlobalAveragePooling2D()(base_model.output)
-feature_extractor = Model(inputs=base_model.input, outputs=out)
-print("✅ DenseNet121 feature extractor ready (input 128x128).")
+# ==============================
+# LOAD MODELS
+# ==============================
+# DenseNet121 feature extractor
+base_densenet = DenseNet121(weights="imagenet", include_top=False, input_shape=(128, 128, 3))
+base_densenet.trainable = False
+d_out = GlobalAveragePooling2D()(base_densenet.output)
+feature_extractor_densenet = Model(inputs=base_densenet.input, outputs=d_out)
+
+# MobileNetV2 feature extractor
+base_mobilenet = MobileNetV2(weights="imagenet", include_top=False, input_shape=(128, 128, 3))
+base_mobilenet.trainable = False
+m_out = GlobalAveragePooling2D()(base_mobilenet.output)
+feature_extractor_mobilenet = Model(inputs=base_mobilenet.input, outputs=m_out)
+
+# Hybrid models
+try:
+    model_densenet = tf.keras.models.load_model("DenseNet121_LSTM_GRU_final.h5")
+    model_mobilenet = tf.keras.models.load_model("MobileNetV2_LSTM_GRU_final.h5")
+    print("✅ Hybrid models loaded successfully!")
+except Exception as e:
+    print(f"⚠ Could not load hybrid models: {e}")
+    model_densenet = None
+    model_mobilenet = None
 
 # ==============================
 # PREPROCESSING FUNCTIONS
@@ -81,6 +93,11 @@ def preprocess_pipeline(image_path):
     img = sharpen_image(img)
     img = normalize_image(img)
     return (img * 255).astype(np.uint8)
+
+def check_blurriness(image_path):
+    """Check image sharpness using variance of Laplacian."""
+    gray = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+    return cv2.Laplacian(gray, cv2.CV_64F).var()
 
 # ==============================
 # ROUTES
@@ -133,8 +150,8 @@ def predict():
             flash("No file selected!", "warning")
             return redirect(request.url)
 
-        if model is None:
-            flash("Model not loaded. Please check your model path.", "danger")
+        if model_densenet is None or model_mobilenet is None:
+            flash("Models not loaded. Please check your model paths.", "danger")
             return redirect(request.url)
 
         try:
@@ -144,25 +161,45 @@ def predict():
             file.save(file_path)
             uploaded_img = filename
 
-            # ===== Preprocess for DenseNet121 =====
+            # Blurriness check
+            blur_value = check_blurriness(file_path)
+            if blur_value < BLUR_THRESHOLD:
+                result = {
+                    "prediction": "Not a Malaria Cell",
+                    "is_cell": False,
+                    "confidence": 0.0,
+                    "description": "The uploaded image is too blurry or unclear to be a valid malaria smear.",
+                    "note": "Please upload a sharp microscopic blood smear image."
+                }
+                return render_template("Predict.html", title="Predict",
+                                       result=result,
+                                       uploaded_img=uploaded_img,
+                                       processed_img=None)
+
+            # Preprocess
             img = image.load_img(file_path, target_size=IMG_SIZE)
             img_array = image.img_to_array(img)
             img_array = np.expand_dims(img_array, axis=0) / 255.0
 
-            # ===== Extract Features =====
-            features = feature_extractor.predict(img_array)
-            features = np.expand_dims(features, axis=1)
+            # Feature extraction
+            feat_dense = feature_extractor_densenet.predict(img_array)
+            feat_dense = np.expand_dims(feat_dense, axis=1)
+            feat_mobile = feature_extractor_mobilenet.predict(img_array)
+            feat_mobile = np.expand_dims(feat_mobile, axis=1)
 
-            # ===== Predict =====
-            preds = model.predict(features)
-            probs = preds[0]
-            pred_idx = int(np.argmax(probs))
+            # Predictions
+            pred_dense = model_densenet.predict(feat_dense)[0]
+            pred_mobile = model_mobilenet.predict(feat_mobile)[0]
+
+            # Ensemble average
+            preds_avg = (pred_dense + pred_mobile) / 2.0
+            pred_idx = int(np.argmax(preds_avg))
             pred_class = CLASS_NAMES[pred_idx]
-            confidence = float(np.max(probs))
-            uncertainty = entropy(probs)
+            confidence = float(np.max(preds_avg))
+            uncertainty = float(entropy(preds_avg))
 
-            # ===== Threshold Check =====
-            if confidence < CONF_THRESHOLD or uncertainty > UNCERTAINTY_THRESHOLD:
+            # Robust threshold check
+            if confidence < CONF_THRESHOLD or (uncertainty > UNCERTAINTY_THRESHOLD and confidence < 0.9):
                 result = {
                     "prediction": "Not a Malaria Cell",
                     "is_cell": False,
@@ -175,7 +212,7 @@ def predict():
                                        uploaded_img=uploaded_img,
                                        processed_img=None)
 
-            # ===== Valid Prediction =====
+            # Valid Prediction
             descriptions = {
                 "Parasitized": "This cell shows presence of malaria parasites.",
                 "Uninfected": "This cell does not show malaria parasites."
@@ -189,7 +226,7 @@ def predict():
                 "note": "Please consult a medical professional for confirmation."
             }
 
-            # ===== Processed Image Preview =====
+            # Processed Image Preview
             processed_img = preprocess_pipeline(file_path)
             processed_img_name = "processed_" + filename
             processed_path = os.path.join(app.config["UPLOAD_FOLDER"], processed_img_name)
